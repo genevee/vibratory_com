@@ -32,6 +32,11 @@ const int TEMPERATURE = 0x21;   //16 bit temperature reading
 const byte READ = 0b11111100;     // SCP1000's read command
 const byte WRITE = 0b00000010;   // SCP1000's write command
 
+   int dataReadyL = 0;
+   int dataReadyH = 0;
+   byte acc_X[2] = {0,0};
+   long acc_full = 0;
+
 
 // pins used for the connection with the sensor
 // the other you need are controlled by the SPI library):
@@ -40,9 +45,7 @@ const int chipSelectPin = 7;
 
 void setup() {
   Serial.begin(9600);
-   int dataReadyL = 0;
-   int dataReadyH = 0;
-   byte acc_X = 0;
+
 
   // start the SPI library:
   SPI.begin();
@@ -57,7 +60,8 @@ void setup() {
   writeRegister(29, 0x08); //Config2
   writeRegister(35, 0x08); //FIFO enable
   writeRegister(106, 0x50); //User control
-  writeRegister(107, 0x09);//Power managment 
+  writeRegister(107, 0x09);//Power managment
+  writeRegister(108, 0x1F); //Disable all axis and gryo except ACC_X 
   // give the sensor time to set up:
   delay(100);
 }
@@ -67,15 +71,18 @@ void loop() {
 
   // don't do anything until the data ready pin is high:
     //Read the temperature data
-    dataReadyL = readRegister(0xF3, 1) //Read from FIFO_CNT_L 
-    dataReadyH = readRegister(0xF2, 1) //Read from FIF0_CNT 0x72, latch new value
+    dataReadyL = readRegister(0xF3, 1); //Read from FIFO_CNT_L 
+    dataReadyH = readRegister(0xF2, 1); //Read from FIF0_CNT 0x72, latch new value
     
     if (dataReadyL | dataReadyH) { //If there is data to be read in the FIFO
-         acc_X = readRegister(0xF4, 1); //Read from 0x74 FIFO_R_W
+         //acc_X[0] = readRegister(0x74, 1); //Read from 0x74 FIFO_R_W ACC_X_H
+         //acc_X[1] = readRegister(0x74, 1); //Read from 0x74 FIFO_R_W ACC_X_L
+         //acc_full = ((acc_X[0] << 16) | acc_X[1]);
+         acc_full = readRegister(0x74, 2); //Read from 0x74 FIFO_R_W ACC_X_H
     } 
     // convert the temperature to celsius and display it:
     Serial.print("ACC_X=");
-    Serial.println(acc_X);
+    Serial.println(acc_full);
     
 }
 
@@ -85,11 +92,8 @@ unsigned int readRegister(byte thisRegister, int bytesToRead ) {
   unsigned int result = 0;   // result to return
   Serial.print(thisRegister, BIN);
   Serial.print("\t");
-  // SCP1000 expects the register name in the upper 6 bits
-  // of the byte. So shift the bits left by two bits:
-  thisRegister = thisRegister << 2;
   // now combine the address and the command into one byte
-  byte dataToSend = thisRegister & READ;
+  byte dataToSend = thisRegister | 0x80;
   Serial.println(thisRegister, BIN);
   // take the chip select low to select the device:
   digitalWrite(chipSelectPin, LOW);
@@ -122,9 +126,9 @@ void writeRegister(byte thisRegister, byte thisValue) {
 
   // SCP1000 expects the register address in the upper 6 bits
   // of the byte. So shift the bits left by two bits:
-  thisRegister = thisRegister << 2;
+  //thisRegister = thisRegister << 2;
   // now combine the register address and the command into one byte:
-  byte dataToSend = thisRegister | WRITE;
+  byte dataToSend = thisRegister;
 
   // take the chip select low to select the device:
   digitalWrite(chipSelectPin, LOW);
@@ -135,4 +139,3 @@ void writeRegister(byte thisRegister, byte thisValue) {
   // take the chip select high to de-select:
   digitalWrite(chipSelectPin, HIGH);
 }
-
