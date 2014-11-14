@@ -1,49 +1,29 @@
-/*
- SCP1000 Barometric Pressure Sensor Display
- 
- Shows the output of a Barometric Pressure Sensor on a
- Uses the SPI library. For details on the sensor, see:
- http://www.sparkfun.com/commerce/product_info.php?products_id=8161
- http://www.vti.fi/en/support/obsolete_products/pressure_sensors/
- 
- This sketch adapted from Nathan Seidle's SCP1000 example for PIC:
- http://www.sparkfun.com/datasheets/Sensors/SCP1000-Testing.zip
- 
- Circuit:
- SCP1000 sensor attached to pins 6, 7, 10 - 13:
- DRDY: pin 6
- CSB: pin 7
- MOSI: pin 11
- MISO: pin 12
- SCK: pin 13
- 
- created 31 July 2010
- modified 14 August 2010
- by Tom Igoe
- */
-
-// the sensor communicates using SPI, so include the library:
+#include <SoftwareSerial.h>
 #include <SPI.h>
 
 //Sensor's memory register addresses:
-const int PRESSURE = 0x1F;      //3 most significant bits of pressure
-const int PRESSURE_LSB = 0x20;  //16 least significant bits of pressure
-const int TEMPERATURE = 0x21;   //16 bit temperature reading
-const byte READ = 0b11111100;     // SCP1000's read command
-const byte WRITE = 0b00000010;   // SCP1000's write command
+const int ledpin = 19;
+const int chipSelectPin = 7;
 
    int dataReadyL = 0;
    int dataReadyH = 0;
    byte acc_X[2] = {0,0};
    long acc_full = 0;
+   byte testh = 1;
+   byte testl = 1;
+   byte test = 0;
+
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+//Connect TXO of OpenLog to pin 3, RXI to pin 2
+//SoftwareSerial(rxPin, txPin)
+
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+int ledPin = 19;
 
 
-// pins used for the connection with the sensor
-// the other you need are controlled by the SPI library):
-//const int dataReadyPin = 6;
-const int chipSelectPin = 7;
-
-void setup() {
+void setup() {                
+  pinMode(ledPin, OUTPUT);
   Serial.begin(9600);
 
 
@@ -56,45 +36,85 @@ void setup() {
 
   //Configure SCP1000 for low noise configuration:
   writeRegister(26, 0x00); //Config reg
+  delay(10);
   writeRegister(28, 0x00); //Accel config
+    delay(10);
   writeRegister(29, 0x08); //Config2
+  delay(10);
   writeRegister(35, 0x08); //FIFO enable
-  writeRegister(106, 0x50); //User control
-  writeRegister(107, 0x09);//Power managment
-  writeRegister(108, 0x1F); //Disable all axis and gryo except ACC_X 
+  delay(10);
+  writeRegister(106, 0x50); //User control 0101 0000
+  delay(10); 
+  writeRegister(107, 0x00);//Power managment 0000 0000
+  delay(10);
+//  writeRegister(108, 0x1F); //Disable all axis and gryo except ACC_X 0001 1111
+  writeRegister(108, 0x00); //Disable all axis and gryo except ACC_X 0001 1111
+
   // give the sensor time to set up:
   delay(100);
 }
 
-void loop() {
-  //Select High Resolution Mode
 
-  // don't do anything until the data ready pin is high:
+void loop() {
+  // read the value from the sensor:
+  // turn the ledPin on
+   //writeRegister(29, 0x08); //Config2
+   delay(100);
+   digitalWrite(ledpin, HIGH);
+
+    // don't do anything until the data ready pin is high:
     //Read the temperature data
-    dataReadyL = readRegister(0xF3, 1); //Read from FIFO_CNT_L 
-    dataReadyH = readRegister(0xF2, 1); //Read from FIF0_CNT 0x72, latch new value
+    //testh = readRegister(59, 1);
+    //delay(10);
+    //testl = readRegister(60, 1);
+    //delay(10);
+    //acc_full = (testh << 16) | testl;
+    //test = readRegister(0x75, 0); //Reg 117
+    dataReadyL = readRegister(0x73, 1); //Read from FIFO_CNT_L 
+    dataReadyH = readRegister(0x72, 1); //Read from FIF0_CNT 0x72, latch new value
+        /*Serial.print("ReadyL=");
+    Serial.print(dataReadyH);
+        Serial.print("  ReadyH=");
+    Serial.println(dataReadyL);*/
+    //Serial.print("Test=");
+    //Serial.println(acc_full);
     
     if (dataReadyL | dataReadyH) { //If there is data to be read in the FIFO
+        //digitalWrite(ledpin, HIGH);
          //acc_X[0] = readRegister(0x74, 1); //Read from 0x74 FIFO_R_W ACC_X_H
          //acc_X[1] = readRegister(0x74, 1); //Read from 0x74 FIFO_R_W ACC_X_L
-         //acc_full = ((acc_X[0] << 16) | acc_X[1]);
+         //acc_full = ((acc_X[0] << 15) | acc_X[1]);
+         delay(10);
+         //digitalWrite(ledpin, LOW);
          acc_full = readRegister(0x74, 2); //Read from 0x74 FIFO_R_W ACC_X_H
     } 
+    else{
+         digitalWrite(ledpin, HIGH);
+         delay(100);
+         digitalWrite(ledpin, LOW);
+         delay(100);
+    }
     // convert the temperature to celsius and display it:
-    Serial.print("ACC_X=");
+    /*Serial.print("ACC_X[0]=");
+   Serial.print(acc_X[0]);
+   Serial.print("   ACC_X[1]=");
+   Serial.println(acc_X[1]);*/
+    Serial.print("Acc_X ");
     Serial.println(acc_full);
-    
+  
+    //Serial.print("   Test =");
+    //Serial.println(test);
 }
 
 //Read from or write to register from the SCP1000:
 unsigned int readRegister(byte thisRegister, int bytesToRead ) {
   byte inByte = 0;           // incoming byte from the SPI
   unsigned int result = 0;   // result to return
-  Serial.print(thisRegister, BIN);
-  Serial.print("\t");
+  //Serial.print(thisRegister, BIN);
+  //Serial.print("\t");
   // now combine the address and the command into one byte
   byte dataToSend = thisRegister | 0x80;
-  Serial.println(thisRegister, BIN);
+  //Serial.println(thisRegister, BIN);
   // take the chip select low to select the device:
   digitalWrite(chipSelectPin, LOW);
   // send the device the register you want to read:
