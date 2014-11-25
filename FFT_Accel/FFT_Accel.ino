@@ -46,6 +46,7 @@ volatile int dom_freq_h = 0;
 volatile int dom_freq_l = 0;
 arm_cfft_radix4_instance_q31 fft_inst_fix;
 volatile boolean hasSampled = false;
+volatile boolean isDone = false;
 
 ////////////////////////////////////////////////////////////////////////////////
 // MAIN SKETCH FUNCTIONS
@@ -75,20 +76,20 @@ void setup() {
 }
 
 void loop() {
-  Serial.print("here");
+  
+  
   // Calculate FFT if a full sample is available.
   if (hasSampled) {
-    //Serial.println("here");
     
     // Run FFT on sample data.
 
     //int first = micros();
     
     //Calculate the FFT of samples and upscale output by 6 bits to retain q31_t data format
-    arm_cfft_radix4_q31(&fft_inst_fix, samples_fix);
+    arm_cfft_radix4_q31(&fft_inst_fix, samples_hold);
 
     // Calculate magnitude of complex numbers outq31put by the FFT.
-    arm_cmplx_mag_q31(samples_fix, magnitudes_fix, FFT_SIZE);
+    arm_cmplx_mag_q31(samples_hold, magnitudes_fix, FFT_SIZE);
     
     //int secon = micros();
     
@@ -110,14 +111,15 @@ void loop() {
     dom_freq_h = dom_freq_l + (SAMPLE_RATE_HZ/FFT_SIZE);
     
     //Serial.print("Dominent Freq: ");
-    /*Serial.print(dom_freq_l);
+    Serial.print(dom_freq_l);
     Serial.print(" - ");
     Serial.print(dom_freq_h);
     Serial.print("  Val: ");
     //Serial.println(((max_val >> (30-READ_RES))/32767.0)*1.8);
-    Serial.println(max_val);*/
+    Serial.println(max_val);
     
     hasSampled = false;
+    isDone = false;
     
     //high = readRegister(63);
     //low = readRegister(64);
@@ -126,7 +128,8 @@ void loop() {
     //Serial.println(val, BIN);
    
   }
-      parserLoop();
+  
+  //parserLoop();
 
 }
 
@@ -140,22 +143,31 @@ void samplingCallback() {
     
   //Serial.println("sampled");
   // Read from the I2C and store the sample data
-  // Serial.print("a");
+   //Serial.print("a");
    //Input samples and convert to q31_t data bit (signbit.31resolution bits)
    high = readRegister(63);
    low = readRegister(64);
    val = (q31_t)((high<<8)+low);
-  // Serial.println((int16_t)((high<<8)+low));
+   //Serial.println((int16_t)((high<<8)+low));
    val = (val << 30-READ_RES);
  
    //samples_fix[sampleCounter] = val;
    
    //shfit the array left by 1
-   shiftRight();
-   samples_hold[0] = val;
-   samples_hold[1] = (q31_t)0;
+   shiftLeft();
+   samples_fix[FFT_SIZE*2-2] = val;
+   samples_fix[FFT_SIZE*2-1] = (q31_t)0;
+   copyArray();
    //add new val to the back
-   hasSampled = true;
+   sampleCounter += 2;
+   
+   //hasSampled = true;
+   
+   if(sampleCounter > FFT_SIZE*2)  {
+     hasSampled = true;
+     isDone = true;
+     sampleCounter = 0;
+   }
    
   }
    
@@ -171,18 +183,27 @@ void samplingCallback() {
   //}
 }
 
-void shiftRight() {
-  for(int i = 0; i < FFT_SIZE*2; i+=2){
-     samples_hold[i] = samples_fix[i+1];
-     samples_hold[i+1] = (q31_t)0; 
+void copyArray() {
+  for(int i = 0; i < FFT_SIZE*2; i++) {
+    samples_hold[i] = samples_fix[i];
   }
   
+}
+
+void shiftLeft() {
   
-  /*for(int i = FFT_SIZE*2-3; i > 0; i=i-2)
+  /*for(int i = 0; i < FFT_SIZE*2; i+=2)
   {
-    samples_fix[i+2] = samples_fix[i];
-    samples_fix[i+1] = 0;
+     samples_hold[i] = samples_fix[i+1];
+     samples_hold[i+1] = (q31_t)0; 
   }*/
+  
+  
+  for(int i = 0; i < FFT_SIZE*2; i++)
+  {
+    samples_fix[i] = samples_fix[i+2];
+    //samples_fix[i+1] = (q31_t)0;
+  }
 }
 
 void samplingBegin() {
