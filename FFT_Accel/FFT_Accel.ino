@@ -26,11 +26,14 @@ const int POWER_LED_PIN = 13;          // Output pin for power LED (pin 13 to us
 // INTERNAL STATE
 // These shouldn't be modified unless you know what you're doing.
 ////////////////////////////////////////////////////////////////////////////////
+const int MAX_CHARS = 65;              // Max size of the input command buffer
+char commandBuffer[MAX_CHARS];
 
 IntervalTimer samplingTimer;
 int sampleCounter = 0;
 
 q31_t samples_fix[FFT_SIZE*2];
+q31_t samples_hold[FFT_SIZE*2];
 q31_t magnitudes_fix[FFT_SIZE];
 q31_t max_finder[FFT_SIZE];
 
@@ -65,12 +68,14 @@ void setup() {
         Serial.print(status);
         Serial.println("FFT Init ERROR!");
     }
+     memset(commandBuffer, 0, sizeof(commandBuffer));
     
     samplingTimer.begin(samplingCallback, 1000000/SAMPLE_RATE_HZ);
+
 }
 
 void loop() {
-
+  Serial.print("here");
   // Calculate FFT if a full sample is available.
   if (hasSampled) {
     //Serial.println("here");
@@ -105,12 +110,12 @@ void loop() {
     dom_freq_h = dom_freq_l + (SAMPLE_RATE_HZ/FFT_SIZE);
     
     //Serial.print("Dominent Freq: ");
-    Serial.print(dom_freq_l);
+    /*Serial.print(dom_freq_l);
     Serial.print(" - ");
     Serial.print(dom_freq_h);
     Serial.print("  Val: ");
     //Serial.println(((max_val >> (30-READ_RES))/32767.0)*1.8);
-    Serial.println(max_val);
+    Serial.println(max_val);*/
     
     hasSampled = false;
     
@@ -121,6 +126,7 @@ void loop() {
     //Serial.println(val, BIN);
    
   }
+      parserLoop();
 
 }
 
@@ -141,12 +147,13 @@ void samplingCallback() {
    val = (q31_t)((high<<8)+low);
   // Serial.println((int16_t)((high<<8)+low));
    val = (val << 30-READ_RES);
+ 
    //samples_fix[sampleCounter] = val;
    
    //shfit the array left by 1
    shiftRight();
-   samples_fix[0] = val;
-   samples_fix[1] = (q31_t)0;
+   samples_hold[0] = val;
+   samples_hold[1] = (q31_t)0;
    //add new val to the back
    hasSampled = true;
    
@@ -165,10 +172,17 @@ void samplingCallback() {
 }
 
 void shiftRight() {
-  for(int i = FFT_SIZE*2-3; i > 0; i--)
+  for(int i = 0; i < FFT_SIZE*2; i+=2){
+     samples_hold[i] = samples_fix[i+1];
+     samples_hold[i+1] = (q31_t)0; 
+  }
+  
+  
+  /*for(int i = FFT_SIZE*2-3; i > 0; i=i-2)
   {
     samples_fix[i+2] = samples_fix[i];
-  }
+    samples_fix[i+1] = 0;
+  }*/
 }
 
 void samplingBegin() {
@@ -207,4 +221,64 @@ uint8_t readRegister(uint8_t reg)
   return ret;
 }
   
+  
+////////////////////////////////////////////////////////////////////////////////
+// COMMAND PARSING FUNCTIONS
+// These functions allow parsing simple commands input on the serial port.
+// Commands allow reading and writing variables that control the device.
+//
+// All commands must end with a semicolon character.
+// 
+// Example commands are:
+// GET SAMPLE_RATE_HZ;
+// - Get the sample rate of the device.
+// SET SAMPLE_RATE_HZ 400;
+// - Set the sample rate of the device to 400 hertz.
+// 
+////////////////////////////////////////////////////////////////////////////////
+
+void parserLoop() {
+  // Process any incoming characters from the serial port
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+    // Add any characters that aren't the end of a command (semicolon) to the input buffer.
+    if (c != ';') {
+      c = toupper(c);
+      strncat(commandBuffer, &c, 1);
+    }
+    else
+    {
+      // Parse the command because an end of command token was encountered.
+      parseCommand(commandBuffer);
+      // Clear the input buffer
+      memset(commandBuffer, 0, sizeof(commandBuffer));
+    }
+  }
+}
+
+// Macro used in parseCommand function to simplify parsing get and set commands for a variable
+#define GET_AND_SET(variableName) \
+  else if (strcmp(command, "GET " #variableName) == 0) { \
+    Serial.println(variableName); \
+  } \
+  else if (strstr(command, "SET " #variableName " ") != NULL) { \
+    variableName = (typeof(variableName)) atof(command+(sizeof("SET " #variableName " ")-1)); \
+  }
+
+void parseCommand(char* command) {
+  if (strcmp(command, "GET MAGNITUDES") == 0) {
+    for (int i = 0; i < FFT_SIZE; ++i) {
+      Serial.println(magnitudes_fix[i]);
+    }
+  }
+  else if (strcmp(command, "GET SAMPLES") == 0) {
+    for (int i = 0; i < FFT_SIZE*2; i+=1) {
+      Serial.println(samples_fix[i]);
+    }
+  }
+  else if (strcmp(command, "GET FFT_SIZE") == 0) {
+    Serial.println(FFT_SIZE);
+  }
+}
+
 
